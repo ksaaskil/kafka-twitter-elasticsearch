@@ -16,11 +16,27 @@ I've added multiproject build with Gradle.
 1. Add Twitter credentials in `twitter-producer/gradle.properties` by using `twitter-producer/gradle.properties.example` as template.
 1. Start the Twitter producer: `./gradlew twitter-producer:run`
 
-### ElasticSearch consumer
+### Setting up ElasticSearch
 
-#### Setting up the cluster with Docker
+#### Using docker-compose
 
-First you need to setup an ElasticSearch cluster. If you have Docker, follow the instructions [here](https://www.elastic.co/guide/en/elasticsearch/reference/6.8/docker.html):
+Use [docker-compose.yml](./docker-compose.yml):
+
+```bash
+$ docker-compose up -d  # Start ES and Kibana
+$ docker-compose down  # Stop cluster
+```
+
+Now you can explore [http://localhost:5601](http://localhost:5601).
+
+#### Using Docker
+
+```bash
+$ ./start-es.sh
+$ ./stop-es.sh
+```
+
+If you have Docker, follow the instructions [here](https://www.elastic.co/guide/en/elasticsearch/reference/6.8/docker.html):
 
 ```bash
 $ docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.6
