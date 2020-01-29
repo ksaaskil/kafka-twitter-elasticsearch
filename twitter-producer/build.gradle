@@ -6,8 +6,6 @@
  * user guide available at https://docs.gradle.org/5.1.1/userguide/tutorial_java_projects.html
  */
 
- 
-
 plugins {
     // Apply the java plugin to add support for Java
     id 'java'
@@ -17,6 +15,8 @@ plugins {
 }
 
 dependencies {
+    // compile project(':greeting-library')
+
     // This dependency is found on compile classpath of this component and consumers.
     implementation 'com.google.guava:guava:26.0-jre'
     implementation 'com.twitter:hbc-core:2.2.0'
