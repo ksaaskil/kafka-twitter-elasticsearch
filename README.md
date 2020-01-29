@@ -6,12 +6,12 @@ I've added multiproject build with Gradle.
 
 ## Instructions
 
-### Kafka
+### Starting Kafka
 
 1. Start Zookeeper: `zookeeper-server-start.sh /path/to/config/zookeeper.properties`
 1. Start Kafka: `kafka-server-start.sh /path/to/config/server.properties`
 
-### Twitter producer
+### Starting Twitter producer
 
 1. Add Twitter credentials in `twitter-producer/gradle.properties` by using `twitter-producer/gradle.properties.example` as template.
 1. Start the Twitter producer: `./gradlew twitter-producer:run`
@@ -56,7 +56,7 @@ Setup Kibana:
 $ docker run --rm --name kibana --link elasticsearch -p 127.0.0.1:5601:5601 -v `pwd`/kibana.yml:/usr/share/kibana/config/kibana.yml docker.elastic.co/kibana/kibana:6.8.6
 ```
 
-#### Starting the consumer
+### Starting ElasticSearch consumer
 
 ```bash
 $ ./gradlew elasticsearch-consumer:run
