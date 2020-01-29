@@ -6,14 +6,6 @@
  * user guide available at https://docs.gradle.org/5.1.1/userguide/tutorial_java_projects.html
  */
 
-plugins {
-    // Apply the java plugin to add support for Java
-    id 'java'
-
-    // Apply the application plugin to add support for building an application
-    id 'application'
-}
-
 dependencies {
     // compile project(':greeting-library')
 
