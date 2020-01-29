@@ -24,13 +24,20 @@ First you need to setup an ElasticSearch cluster. If you have Docker, follow the
 
 ```bash
 $ docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.6
-$ docker run -p 127.0.0.1:9200:9200 -p 127.0.0.1:9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.8.6  
+$ docker run --rm --name elasticsearch -p 127.0.0.1:9200:9200 -p 127.0.0.1:9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.8.6
 ```
 
 If you want to add a custom configuration, add a bind mount:
 
 ```bash
 $ docker run ... -v `pwd`/custom_elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+```
+
+You can also setup Kibana with Docker:
+
+```bash
+$ docker pull docker.elastic.co/kibana/kibana:6.8.6
+$ docker run --link elasticsearch:elasticsearch -p 5601:5601 docker.elastic.co/kibana/kibana:6.8.6
 ```
 
 #### Starting the consumer
