@@ -11,3 +11,11 @@ I've added multiproject build with Gradle.
 1. Add Twitter credentials in `twitter-producer/gradle.properties` by using `twitter-producer/gradle.properties.example` as template.
 1. Start the Twitter producer: `./gradlew twitter-producer:run`
 1. TODO...
+
+## Debugging
+
+Consume tweets from `twitter_tweets` topic to stdout with `kafkacat`:
+
+```bash
+$ kafkacat -b localhost:9092 -t twitter_tweets
+```
