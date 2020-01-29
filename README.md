@@ -31,15 +31,16 @@ Now you can explore [http://localhost:5601](http://localhost:5601).
 
 #### Using Docker
 
+Use the bash scripts included in the repository:
+
 ```bash
 $ ./start-es.sh
 $ ./stop-es.sh
 ```
 
-If you have Docker, follow the instructions [here](https://www.elastic.co/guide/en/elasticsearch/reference/6.8/docker.html):
+More explicitly:
 
 ```bash
-$ docker pull docker.elastic.co/elasticsearch/elasticsearch:6.8.6
 $ docker run --rm --name elasticsearch -p 127.0.0.1:9200:9200 -p 127.0.0.1:9300:9300 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:6.8.6
 ```
 
@@ -49,11 +50,10 @@ If you want to add a custom configuration, add a bind mount:
 $ docker run ... -v `pwd`/custom_elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
 ```
 
-You can also setup Kibana with Docker:
+Setup Kibana:
 
 ```bash
-$ docker pull docker.elastic.co/kibana/kibana:6.8.6
-$ docker run --link elasticsearch:elasticsearch -p 5601:5601 docker.elastic.co/kibana/kibana:6.8.6
+$ docker run --rm --name kibana --link elasticsearch -p 127.0.0.1:5601:5601 -v `pwd`/kibana.yml:/usr/share/kibana/config/kibana.yml docker.elastic.co/kibana/kibana:6.8.6
 ```
 
 #### Starting the consumer
