@@ -4,10 +4,11 @@ import java.io.IOException;
 import java.util.Properties;
 
 import org.apache.http.HttpHost;
+import org.elasticsearch.action.ActionListener;
 import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.client.RestClient;
-import org.elasticsearch.client.RestClientBuilder;
-import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.client.*;
+import org.elasticsearch.common.xcontent.XContentType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,10 +16,40 @@ public class ElasticSearchConsumer {
 
     public static Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
     public static String KAFKA_TOPIC = "twitter_tweets";
+    private final RestHighLevelClient esClient;
+
+    public ElasticSearchConsumer(RestHighLevelClient esClient) {
+        this.esClient = esClient;
+    }
+
+    protected Cancellable sendTestJson() {
+        String jsonString = "{ \"foo\": \"bar\"}";
+        IndexRequest indexRequest = new IndexRequest("twitter")
+            .source(jsonString, XContentType.JSON);
+
+        ActionListener<IndexResponse> listener = new ActionListener<IndexResponse>() {
+            @Override
+            public void onResponse(IndexResponse indexResponse) {
+                LOG.debug("Document indexed");
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                LOG.error("Failed indexing message to ElasticSearch", e);
+            }
+        };
+
+        Cancellable cancellable = this.esClient.indexAsync(indexRequest, RequestOptions.DEFAULT, listener);
+        return cancellable;
+    }
 
     protected static void run() {
 
         RestHighLevelClient esClient = createClient();
+
+        ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(esClient);
+
+        elasticSearchConsumer.sendTestJson();
 
         Thread shutdownHook = new Thread(() -> {
             LOG.info("Closing clients...");
@@ -39,6 +70,7 @@ public class ElasticSearchConsumer {
              */
         });
 
+        LOG.info("Adding shutdown hook");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
 
         // process(client, msgQueue, kafkaProducer);
@@ -49,10 +81,6 @@ public class ElasticSearchConsumer {
                 new HttpHost("localhost", 9200, "http")
         );
         return new RestHighLevelClient(builder);
-    }
-
-    private static IndexRequest getIndexRequest() {
-        return new IndexRequest("twitter", "tweets");
     }
 
     private static Properties createProperties() {

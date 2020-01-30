@@ -1,20 +1,28 @@
 version: "3"
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.0.0
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES_VERSION}
+    environment:
+      - discovery.type=single-node
+      - node.name=es01
+      - cluster.name=es-docker
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     container_name: elasticsearch
     ports:
       - 9200:9200
       - 9300:9300
-    environment:
-      - discovery.type=single-node
     networks:
       - elastic
     volumes:
       - ./es-data:/usr/share/elasticsearch/data
       # - ./elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml
   kibana:
-    image: docker.elastic.co/kibana/kibana:7.0.0
+    image: docker.elastic.co/kibana/kibana:${ES_VERSION}
     container_name: kibana
     volumes:
       - ./kibana.yml:/usr/share/kibana/config/kibana.yml
