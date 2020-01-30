@@ -11,10 +11,17 @@ Stuff I (@ksaaskil) have added:
 
 ## Instructions
 
-### Starting Kafka
+### Starting Kafka and Zookeeper
 
-1. Start Zookeeper: `zookeeper-server-start.sh /path/to/config/zookeeper.properties`
-1. Start Kafka: `kafka-server-start.sh /path/to/config/server.properties`
+To start both Kafka and Zookeeper, modify `KAFKA_DIR` in [start-zookeeper-kafka.sh](./start-zookeeper-kafka.sh) and run:
+
+```bash
+$ ./start-zookeeper-kafka.sh
+# To stop:
+$ ./stop-zookeeper-kafka.sh
+```
+
+Logs are written to `kafka.log` and `zookeeper.log`.
 
 ### Starting Twitter producer
 
