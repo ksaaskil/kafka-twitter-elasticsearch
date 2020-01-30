@@ -11,8 +11,10 @@ dependencies {
 
     // This dependency is found on compile classpath of this component and consumers.
     implementation 'com.google.guava:guava:26.0-jre'
-    implementation 'org.slf4j:slf4j-simple:1.7.30'
-    implementation 'org.apache.kafka:kafka-clients:2.4.0'
+    // implementation 'org.slf4j:slf4j-simple:1.7.30'
+    // implementation 'org.apache.kafka:kafka-clients:2.4.0'
+    // https://mvnrepository.com/artifact/org.elasticsearch.client/elasticsearch-rest-high-level-client
+    implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.5.2'
 
     // Use JUnit test framework
     testImplementation 'junit:junit:4.12'

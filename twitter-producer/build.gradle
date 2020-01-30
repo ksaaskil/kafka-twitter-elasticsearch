@@ -12,8 +12,8 @@ dependencies {
     // This dependency is found on compile classpath of this component and consumers.
     implementation 'com.google.guava:guava:26.0-jre'
     implementation 'com.twitter:hbc-core:2.2.0'
-    implementation 'org.slf4j:slf4j-simple:1.7.30'
-    implementation 'org.apache.kafka:kafka-clients:2.4.0'
+    // implementation 'org.slf4j:slf4j-simple:1.7.30'
+    // implementation 'org.apache.kafka:kafka-clients:2.4.0'
 
     // Use JUnit test framework
     testImplementation 'junit:junit:4.12'
