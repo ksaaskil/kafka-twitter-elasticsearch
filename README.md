@@ -76,6 +76,12 @@ List indices:
 $ curl "localhost:9200/_cat/indices?v"
 ```
 
+Create an index `twitter`:
+
+```bash
+$ curl -X PUT "localhost:9200/twitter"
+```
+
 Add a tweet:
 
 ```bash
