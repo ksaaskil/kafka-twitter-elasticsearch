@@ -7,5 +7,6 @@
  * in the user guide at https://docs.gradle.org/5.1.1/userguide/multi_project_builds.html
  */
 
-rootProject.name = 'kafka-twitter-elasticsearch-demo-multi'
+rootProject.name = 'kafka-twitter-elasticsearch'
 include 'twitter-producer'
+include 'elasticsearch-consumer'

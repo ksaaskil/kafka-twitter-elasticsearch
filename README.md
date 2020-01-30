@@ -68,6 +68,20 @@ Setup Kibana:
 $ docker run --rm --name kibana --link elasticsearch -p 127.0.0.1:5601:5601 -v `pwd`/kibana.yml:/usr/share/kibana/config/kibana.yml docker.elastic.co/kibana/kibana:6.8.6
 ```
 
+#### Exploring ElasticSearch
+
+List indices:
+
+```bash
+$ curl "localhost:9200/_cat/indices?v"
+```
+
+Add a tweet:
+
+```bash
+$ curl -X PUT "localhost:9200/twitter/tweets/1" -H 'Content-Type: application/json' -d '{ "course": "Kafka" }'
+```
+
 ### Starting ElasticSearch consumer
 
 ```bash
