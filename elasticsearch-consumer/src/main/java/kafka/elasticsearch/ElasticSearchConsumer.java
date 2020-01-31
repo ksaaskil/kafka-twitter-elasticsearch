@@ -6,10 +6,10 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -37,49 +37,15 @@ public class ElasticSearchConsumer {
         this.kafkaConsumer = kafkaConsumer;
     }
 
-    protected Cancellable sendTestJson() {
-        // String jsonString = "{ \"foo\": \"bar\"}";
-
-        Map<String, Object> jsonMap = new HashMap<>();
-        jsonMap.put("user", "kimchy");
-
-        IndexRequest indexRequest = new IndexRequest("twitter")
-                .source(jsonMap);
-
-        ActionListener<IndexResponse> listener = new ActionListener<IndexResponse>() {
-            @Override
-            public void onResponse(IndexResponse indexResponse) {
-                LOG.debug("Document indexed with id {}", indexResponse.getId());
-            }
-
-            @Override
-            public void onFailure(Exception e) {
-                LOG.error("Failed indexing message to ElasticSearch", e);
-            }
-        };
-
-        Cancellable cancellable = this.esClient.indexAsync(indexRequest, RequestOptions.DEFAULT, listener);
-        return cancellable;
-    }
-
     protected void start() {
         LOG.info("Creating consumer thread");
         ConsumerRunnable consumerRunnable = new ConsumerRunnable(this.esClient, this.kafkaConsumer);
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
-        executor.submit(consumerRunnable);
+        Future future = executor.submit(consumerRunnable);
 
         Thread shutdownHook = new Thread(() -> {
             consumerRunnable.shutdown();
-
-            /*try {
-                LOG.info("Closing ES client...");
-                esClient.close();
-                LOG.info("Closed ES client");
-            } catch (IOException e) {
-                LOG.error("Failed closing ES client");
-                e.printStackTrace();
-            }*/
 
             try {
                 executor.awaitTermination(10000, TimeUnit.MILLISECONDS);
@@ -90,31 +56,36 @@ public class ElasticSearchConsumer {
         });
 
         LOG.info("Adding shutdown hook");
-
         Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+        try {
+            future.get();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        }
 
     }
 
     protected static void run() {
+        RestHighLevelClient esClient = createEsClient();
 
-        RestHighLevelClient esClient = createClient();
-
-        KafkaConsumer<String, String> consumer = kafkaConsumer();
+        KafkaConsumer<String, String> consumer = createKafkaConsumer();
 
         ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(esClient, consumer);
 
-        elasticSearchConsumer.sendTestJson();
-
         elasticSearchConsumer.start();
-        // process(client, msgQueue, kafkaProducer);
     }
 
-    private static KafkaConsumer<String, String> kafkaConsumer() {
+    private static KafkaConsumer<String, String> createKafkaConsumer() {
         Properties properties = createProperties();
-        return new KafkaConsumer<>(properties);
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(properties);
+        consumer.subscribe(Collections.singleton(KAFKA_TOPIC));
+        return consumer;
     }
 
-    private static RestHighLevelClient createClient() {
+    private static RestHighLevelClient createEsClient() {
         RestClientBuilder builder = RestClient.builder(
                 new HttpHost("localhost", 9200, "http")
         );
@@ -158,44 +129,90 @@ public class ElasticSearchConsumer {
     public static class ConsumerRunnable implements Runnable {
 
         private final KafkaConsumer<String, String> consumer;
-        private final Logger logger = LoggerFactory.getLogger(ConsumerRunnable.class);
+        private final Logger LOG = LoggerFactory.getLogger(ConsumerRunnable.class);
         private final RestHighLevelClient esClient;
+        // private static JsonParser jsonParser = new JsonParser();
 
         private ConsumerRunnable(RestHighLevelClient esClient, KafkaConsumer<String, String> consumer) {
             this.esClient = esClient;
             this.consumer = consumer;
         }
 
+        private static JsonObject parseAsJsonObject(String obj) {
+            return JsonParser.parseString(obj).getAsJsonObject();
+        }
+
+        private static String extractIdFromTweet(String jsonString) {
+            return parseAsJsonObject(jsonString).get("id_str").getAsString();
+        }
+
+        protected void index(ConsumerRecord<String, String> record) {
+
+            // Kafka generic ID
+            // String id = record.topic() + record.partition() + record.offset();
+
+            String tweetRecord = record.value();
+
+            JsonObject parsedTweetRecord = parseAsJsonObject(tweetRecord);
+
+            String text = parsedTweetRecord.get("text").getAsString();
+
+            // Twitter ID
+            String id = extractIdFromTweet(tweetRecord);
+
+            Map<String, Object> jsonMap = new HashMap<>();
+            jsonMap.put("id", id);
+            jsonMap.put("text", text);
+
+            IndexRequest indexRequest = new IndexRequest("twitter")
+                    .id(id)
+                    .source(jsonMap);
+
+            ActionListener<IndexResponse> listener = new ActionListener<IndexResponse>() {
+                @Override
+                public void onResponse(IndexResponse indexResponse) {
+                    LOG.info("Document indexed with id {}", indexResponse.getId());
+                }
+
+                @Override
+                public void onFailure(Exception e) {
+                    LOG.error("Failed indexing message to ElasticSearch", e);
+                }
+            };
+
+            this.esClient.indexAsync(indexRequest, RequestOptions.DEFAULT, listener);
+        }
+
         @Override
         public void run() {
-            consumer.subscribe(Collections.singleton(KAFKA_TOPIC));
             try {
                 while (true) {
-                    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-                    for (ConsumerRecord record : records) {
-                        // TODO Index to ES
-                        logger.info("Key: " + record.key() + ", Value: " + record.value() +
+                    ConsumerRecords<String, String> records = this.consumer.poll(Duration.ofMillis(100));
+                    for (ConsumerRecord<String, String> record : records) {
+                        LOG.debug("Key: " + record.key() + ", Value: " + record.value() +
                                 ", Partition: " + record.partition() + ", Offset: " + record.offset());
+                        this.index(record);
                     }
                 }
             } catch (WakeupException ex) {
-                logger.info("Received WakeupException");
+                LOG.info("Received WakeupException");
             } finally {
                 consumer.close();
                 try {
                     esClient.close();
                 } catch (IOException e) {
+                    LOG.error("Failed closing ElasticSearch client", e);
                     e.printStackTrace();
                 }
                 // tell main code we're done
-                logger.info("Consumer closed cleanly");
+                LOG.info("Consumer closed cleanly");
             }
 
 
         }
 
         private void shutdown() {
-            logger.info("Invoking consumer.wakeup()");
+            LOG.info("Invoking consumer.wakeup()");
             // Interrupt consumer.poll() by throwing a WakeupException
             consumer.wakeup();
         }
