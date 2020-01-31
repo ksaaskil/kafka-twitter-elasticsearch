@@ -26,26 +26,29 @@ import org.slf4j.LoggerFactory;
 
 public class ElasticSearchConsumer {
 
-    public static Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
-    public static String KAFKA_TOPIC = "twitter_tweets";
-    public static String GROUP_ID = "es-consumer-1";
-    private final RestHighLevelClient esClient;
-    private final KafkaConsumer<String, String> kafkaConsumer;
+    private static Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
+    private static String KAFKA_TOPIC = "twitter_tweets";
+    private static String GROUP_ID = "es-consumer-1";
 
-    public ElasticSearchConsumer(RestHighLevelClient esClient, KafkaConsumer<String, String> kafkaConsumer) {
-        this.esClient = esClient;
+    private final KafkaConsumer<String, String> kafkaConsumer;
+    private final IndexingStrategy indexingStrategy;
+    private final ConsumerRunnable runnable;
+
+    private ElasticSearchConsumer(KafkaConsumer<String, String> kafkaConsumer,
+                                  IndexingStrategy indexingStrategy) {
         this.kafkaConsumer = kafkaConsumer;
+        this.indexingStrategy = indexingStrategy;
+        this.runnable = new ConsumerRunnable(this.kafkaConsumer, this.indexingStrategy);
     }
 
-    protected void start() {
+    private Future start() {
         LOG.info("Creating consumer thread");
-        ConsumerRunnable consumerRunnable = new ConsumerRunnable(this.esClient, this.kafkaConsumer);
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
-        Future future = executor.submit(consumerRunnable);
+        Future future = executor.submit(this.runnable);
 
         Thread shutdownHook = new Thread(() -> {
-            consumerRunnable.shutdown();
+            runnable.shutdown();
 
             try {
                 executor.awaitTermination(10000, TimeUnit.MILLISECONDS);
@@ -58,29 +61,43 @@ public class ElasticSearchConsumer {
         LOG.info("Adding shutdown hook");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
 
+        return future;
+
+    }
+
+    static void run(boolean syncProcessing) {
+        RestHighLevelClient esClient = createEsClient();
+
+        KafkaConsumer<String, String> consumer = createKafkaConsumer(syncProcessing);
+
+        IndexingStrategy indexingStrategy = syncProcessing ? new SyncIndexingStrategy(esClient) : new ASyncIndexingStrategy(esClient);
+
+        ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(consumer, indexingStrategy);
+
+        Future future = elasticSearchConsumer.start();
+
         try {
             future.get();
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            LOG.info("Interrupted");
         } catch (ExecutionException e) {
-            e.printStackTrace();
+            LOG.info("Failed executing", e);
+        } finally {
+            consumer.close();
+            try {
+                esClient.close();
+            } catch (IOException e) {
+                LOG.error("Failed closing ElasticSearch client", e);
+            }
+            // tell main code we're done
+            LOG.info("Consumer closed cleanly");
         }
-
     }
 
-    protected static void run() {
-        RestHighLevelClient esClient = createEsClient();
-
-        KafkaConsumer<String, String> consumer = createKafkaConsumer();
-
-        ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(esClient, consumer);
-
-        elasticSearchConsumer.start();
-    }
-
-    private static KafkaConsumer<String, String> createKafkaConsumer() {
+    private static KafkaConsumer<String, String> createKafkaConsumer(boolean sync) {
         Properties properties = createProperties();
-        KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(properties);
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, Boolean.toString(sync));
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(properties);
         consumer.subscribe(Collections.singleton(KAFKA_TOPIC));
         return consumer;
     }
@@ -101,6 +118,9 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // earliest,
+
+        // For synchronous processing
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
 //
 //        // Safe producer properties
 //        properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
@@ -115,59 +135,38 @@ public class ElasticSearchConsumer {
 
         return properties;
     }
+    
+    public interface IndexingStrategy {
+        void commit(IndexRequest indexRequest);
+    }
+    
+    public static class SyncIndexingStrategy implements IndexingStrategy {
 
-    public static String readEnv(String env) {
-        String value = System.getenv(env);
-        if (value == null) {
-            LOG.info("Missing environment variable {}", env);
-        } else {
-            LOG.info("Environment variable loaded: {}", env);
+        private final RestHighLevelClient esClient;
+
+        public SyncIndexingStrategy(RestHighLevelClient esClient) {
+            this.esClient = esClient;
         }
-        return value == null ? "N/A" : value;
+
+        @Override
+        public void commit(IndexRequest indexRequest) {
+            try {
+                this.esClient.index(indexRequest, RequestOptions.DEFAULT);
+            } catch (IOException e) {
+                LOG.error("Failed indexing message to ElasticSearch", e);
+            }
+        }
     }
 
-    public static class ConsumerRunnable implements Runnable {
+    public static class ASyncIndexingStrategy implements IndexingStrategy {
 
-        private final KafkaConsumer<String, String> consumer;
-        private final Logger LOG = LoggerFactory.getLogger(ConsumerRunnable.class);
         private final RestHighLevelClient esClient;
-        // private static JsonParser jsonParser = new JsonParser();
 
-        private ConsumerRunnable(RestHighLevelClient esClient, KafkaConsumer<String, String> consumer) {
+        public ASyncIndexingStrategy(RestHighLevelClient esClient) {
             this.esClient = esClient;
-            this.consumer = consumer;
         }
 
-        private static JsonObject parseAsJsonObject(String obj) {
-            return JsonParser.parseString(obj).getAsJsonObject();
-        }
-
-        private static String extractIdFromTweet(String jsonString) {
-            return parseAsJsonObject(jsonString).get("id_str").getAsString();
-        }
-
-        protected void index(ConsumerRecord<String, String> record) {
-
-            // Kafka generic ID
-            // String id = record.topic() + record.partition() + record.offset();
-
-            String tweetRecord = record.value();
-
-            JsonObject parsedTweetRecord = parseAsJsonObject(tweetRecord);
-
-            String text = parsedTweetRecord.get("text").getAsString();
-
-            // Twitter ID
-            String id = extractIdFromTweet(tweetRecord);
-
-            Map<String, Object> jsonMap = new HashMap<>();
-            jsonMap.put("id", id);
-            jsonMap.put("text", text);
-
-            IndexRequest indexRequest = new IndexRequest("twitter")
-                    .id(id)
-                    .source(jsonMap);
-
+        public void commit(IndexRequest indexRequest) {
             ActionListener<IndexResponse> listener = new ActionListener<IndexResponse>() {
                 @Override
                 public void onResponse(IndexResponse indexResponse) {
@@ -182,6 +181,45 @@ public class ElasticSearchConsumer {
 
             this.esClient.indexAsync(indexRequest, RequestOptions.DEFAULT, listener);
         }
+    }
+
+    public static class ConsumerRunnable implements Runnable {
+
+        private final KafkaConsumer<String, String> consumer;
+        private final Logger LOG = LoggerFactory.getLogger(ConsumerRunnable.class);
+        private final IndexingStrategy index;
+
+        private ConsumerRunnable(KafkaConsumer<String, String> consumer,
+                                 IndexingStrategy indexingStrategy) {
+            this.consumer = consumer;
+            this.index = indexingStrategy;
+        }
+
+        private static JsonObject parseAsJsonObject(String obj) {
+            return JsonParser.parseString(obj).getAsJsonObject();
+        }
+
+        private static IndexRequest toIndexRequest(ConsumerRecord<String, String> tweet) {
+            // Kafka generic ID
+            // String id = record.topic() + record.partition() + record.offset();
+
+            String tweetRecordString = tweet.value();
+
+            JsonObject parsedTweetRecord = parseAsJsonObject(tweetRecordString);
+
+            String text = parsedTweetRecord.get("text").getAsString();
+
+            // Twitter ID
+            String twitterId = parsedTweetRecord.get("id_str").getAsString();
+
+            Map<String, Object> jsonMap = new HashMap<>();
+            jsonMap.put("id", twitterId);
+            jsonMap.put("text", text);
+
+            return new IndexRequest("twitter")
+                    .id(twitterId)
+                    .source(jsonMap);
+        }
 
         @Override
         public void run() {
@@ -191,24 +229,13 @@ public class ElasticSearchConsumer {
                     for (ConsumerRecord<String, String> record : records) {
                         LOG.debug("Key: " + record.key() + ", Value: " + record.value() +
                                 ", Partition: " + record.partition() + ", Offset: " + record.offset());
-                        this.index(record);
+                        IndexRequest indexRequest = toIndexRequest(record);
+                        this.index.commit(indexRequest);
                     }
                 }
             } catch (WakeupException ex) {
                 LOG.info("Received WakeupException");
-            } finally {
-                consumer.close();
-                try {
-                    esClient.close();
-                } catch (IOException e) {
-                    LOG.error("Failed closing ElasticSearch client", e);
-                    e.printStackTrace();
-                }
-                // tell main code we're done
-                LOG.info("Consumer closed cleanly");
             }
-
-
         }
 
         private void shutdown() {
