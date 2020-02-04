@@ -18,6 +18,8 @@ import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.elasticsearch.action.ActionListener;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.client.*;
@@ -26,19 +28,19 @@ import org.slf4j.LoggerFactory;
 
 public class ElasticSearchConsumer {
 
-    private static Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
-    private static String KAFKA_TOPIC = "twitter_tweets";
-    private static String GROUP_ID = "es-consumer-1";
+    private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
+    private static final String KAFKA_TOPIC = "twitter_tweets";
+    private static final String GROUP_ID = "es-consumer-1";
 
     private final KafkaConsumer<String, String> kafkaConsumer;
-    private final IndexingStrategy indexingStrategy;
+    private final Indexer indexer;
     private final ConsumerRunnable runnable;
 
     private ElasticSearchConsumer(KafkaConsumer<String, String> kafkaConsumer,
-                                  IndexingStrategy indexingStrategy) {
+                                  Indexer IIndexer) {
         this.kafkaConsumer = kafkaConsumer;
-        this.indexingStrategy = indexingStrategy;
-        this.runnable = new ConsumerRunnable(this.kafkaConsumer, this.indexingStrategy);
+        this.indexer = IIndexer;
+        this.runnable = new ConsumerRunnable(this.kafkaConsumer, this.indexer);
     }
 
     private Future start() {
@@ -65,14 +67,14 @@ public class ElasticSearchConsumer {
 
     }
 
-    static void run(boolean syncProcessing) {
+    static void run() {
         RestHighLevelClient esClient = createEsClient();
 
-        KafkaConsumer<String, String> consumer = createKafkaConsumer(syncProcessing);
+        KafkaConsumer<String, String> consumer = createKafkaConsumer();
 
-        IndexingStrategy indexingStrategy = syncProcessing ? new SyncIndexingStrategy(esClient) : new ASyncIndexingStrategy(esClient);
+        Indexer indexer = new SyncIndexer(esClient);
 
-        ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(consumer, indexingStrategy);
+        ElasticSearchConsumer elasticSearchConsumer = new ElasticSearchConsumer(consumer, indexer);
 
         Future future = elasticSearchConsumer.start();
 
@@ -94,9 +96,8 @@ public class ElasticSearchConsumer {
         }
     }
 
-    private static KafkaConsumer<String, String> createKafkaConsumer(boolean sync) {
-        Properties properties = createProperties();
-        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, Boolean.toString(sync));
+    private static KafkaConsumer<String, String> createKafkaConsumer() {
+        Properties properties = createProperties(false);
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(properties);
         consumer.subscribe(Collections.singleton(KAFKA_TOPIC));
         return consumer;
@@ -109,7 +110,7 @@ public class ElasticSearchConsumer {
         return new RestHighLevelClient(builder);
     }
 
-    private static Properties createProperties() {
+    private static Properties createProperties(boolean enableAutoCommit) {
         Properties properties = new Properties();
 
         // Base properties
@@ -119,32 +120,24 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // earliest,
 
-        // For synchronous processing
-        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
-//
-//        // Safe producer properties
-//        properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
-//        properties.setProperty(ProducerConfig.ACKS_CONFIG, "all");
-//        properties.setProperty(ProducerConfig.RETRIES_CONFIG, Integer.toString(Integer.MAX_VALUE));
-//        properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
-//
-//        // High-throughput producer properties
-//        properties.setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");  // lz4, gzip, etc.
-//        properties.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, "65536");  // 64 kB
-//        properties.setProperty(ProducerConfig.LINGER_MS_CONFIG, "100");  // Linger a while for larger batches
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(20));
+
+        // Auto-commit consumed messages config
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, Boolean.toString(enableAutoCommit));
 
         return properties;
     }
     
-    public interface IndexingStrategy {
+    public interface Indexer {
         void commit(IndexRequest indexRequest);
+        void commitBulk(BulkRequest bulkRequest);
     }
     
-    public static class SyncIndexingStrategy implements IndexingStrategy {
+    public static class SyncIndexer implements Indexer {
 
         private final RestHighLevelClient esClient;
 
-        public SyncIndexingStrategy(RestHighLevelClient esClient) {
+        public SyncIndexer(RestHighLevelClient esClient) {
             this.esClient = esClient;
         }
 
@@ -156,13 +149,23 @@ public class ElasticSearchConsumer {
                 LOG.error("Failed indexing message to ElasticSearch", e);
             }
         }
+
+        @Override
+        public void commitBulk(BulkRequest bulkRequest) {
+            try {
+                this.esClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+            } catch (IOException e) {
+                LOG.error("Failed indexing bulk to ElasticSearch", e);
+            }
+        }
+
     }
 
-    public static class ASyncIndexingStrategy implements IndexingStrategy {
+    public static class ASyncIIndexer implements Indexer {
 
         private final RestHighLevelClient esClient;
 
-        public ASyncIndexingStrategy(RestHighLevelClient esClient) {
+        public ASyncIIndexer(RestHighLevelClient esClient) {
             this.esClient = esClient;
         }
 
@@ -181,18 +184,35 @@ public class ElasticSearchConsumer {
 
             this.esClient.indexAsync(indexRequest, RequestOptions.DEFAULT, listener);
         }
+
+        @Override
+        public void commitBulk(BulkRequest bulkRequest) {
+            ActionListener<BulkResponse> listener = new ActionListener<BulkResponse>() {
+                @Override
+                public void onResponse(BulkResponse bulkResponse) {
+                    LOG.info("Documents indexed with in {} milliseconds", bulkResponse.getIngestTookInMillis());
+                }
+
+                @Override
+                public void onFailure(Exception e) {
+                    LOG.error("Failed indexing message to ElasticSearch", e);
+                }
+            };
+
+            this.esClient.bulkAsync(bulkRequest, RequestOptions.DEFAULT, listener);
+        }
     }
 
     public static class ConsumerRunnable implements Runnable {
 
         private final KafkaConsumer<String, String> consumer;
         private final Logger LOG = LoggerFactory.getLogger(ConsumerRunnable.class);
-        private final IndexingStrategy index;
+        private final Indexer index;
 
         private ConsumerRunnable(KafkaConsumer<String, String> consumer,
-                                 IndexingStrategy indexingStrategy) {
+                                 Indexer IIndexer) {
             this.consumer = consumer;
-            this.index = indexingStrategy;
+            this.index = IIndexer;
         }
 
         private static JsonObject parseAsJsonObject(String obj) {
@@ -226,12 +246,17 @@ public class ElasticSearchConsumer {
             try {
                 while (true) {
                     ConsumerRecords<String, String> records = this.consumer.poll(Duration.ofMillis(100));
+                    LOG.info("Received " + records.count() + " records.");
+                    BulkRequest bulkRequest = new BulkRequest();
                     for (ConsumerRecord<String, String> record : records) {
                         LOG.debug("Key: " + record.key() + ", Value: " + record.value() +
                                 ", Partition: " + record.partition() + ", Offset: " + record.offset());
                         IndexRequest indexRequest = toIndexRequest(record);
-                        this.index.commit(indexRequest);
+                        bulkRequest.add(indexRequest);
+                        // this.index.commit(indexRequest);
                     }
+                    this.index.commitBulk(bulkRequest);
+                    this.consumer.commitSync();
                 }
             } catch (WakeupException ex) {
                 LOG.info("Received WakeupException");
