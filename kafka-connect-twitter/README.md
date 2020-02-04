@@ -33,7 +33,7 @@ $ kafka-topics.sh --bootstrap-server localhost:9092 --list
 $ ./run.sh
 ```
 
-or 
+or
 
 ```bash
 $ connect-standalone.sh connect-standalone.properties twitter.properties
