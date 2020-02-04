@@ -109,3 +109,8 @@ Check consumer group offsets:
 ```bash
 $ kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group es-consumer-1 --describe
 ```
+
+
+## Using the Twitter connector
+
+See [kafka-connect-twitter](./kafka-connect-twitter).
