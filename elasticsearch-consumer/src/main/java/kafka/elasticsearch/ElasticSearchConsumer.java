@@ -31,6 +31,7 @@ public class ElasticSearchConsumer {
     private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchConsumer.class);
     private static final String KAFKA_TOPIC = "twitter_tweets";
     private static final String GROUP_ID = "es-consumer-1";
+    private static final Integer MAX_POLL_RECORDS = 100;
 
     private final KafkaConsumer<String, String> kafkaConsumer;
     private final Indexer indexer;
@@ -120,7 +121,7 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, GROUP_ID);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // earliest,
 
-        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(20));
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(MAX_POLL_RECORDS));
 
         // Auto-commit consumed messages config
         properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, Boolean.toString(enableAutoCommit));
@@ -129,8 +130,8 @@ public class ElasticSearchConsumer {
     }
     
     public interface Indexer {
-        void commit(IndexRequest indexRequest);
-        void commitBulk(BulkRequest bulkRequest);
+        void commit(IndexRequest indexRequest) throws IOException;
+        void commitBulk(BulkRequest bulkRequest) throws IOException;
     }
     
     public static class SyncIndexer implements Indexer {
@@ -142,21 +143,14 @@ public class ElasticSearchConsumer {
         }
 
         @Override
-        public void commit(IndexRequest indexRequest) {
-            try {
-                this.esClient.index(indexRequest, RequestOptions.DEFAULT);
-            } catch (IOException e) {
-                LOG.error("Failed indexing message to ElasticSearch", e);
-            }
+        public void commit(IndexRequest indexRequest) throws IOException {
+            this.esClient.index(indexRequest, RequestOptions.DEFAULT);
         }
 
         @Override
-        public void commitBulk(BulkRequest bulkRequest) {
-            try {
-                this.esClient.bulk(bulkRequest, RequestOptions.DEFAULT);
-            } catch (IOException e) {
-                LOG.error("Failed indexing bulk to ElasticSearch", e);
-            }
+        public void commitBulk(BulkRequest bulkRequest) throws IOException {
+            BulkResponse bulkResponse = this.esClient.bulk(bulkRequest, RequestOptions.DEFAULT);
+            LOG.debug("Bulk request indexing in {} ms", bulkResponse.getTook().getMillis());
         }
 
     }
@@ -245,18 +239,25 @@ public class ElasticSearchConsumer {
         public void run() {
             try {
                 while (true) {
-                    ConsumerRecords<String, String> records = this.consumer.poll(Duration.ofMillis(100));
-                    LOG.info("Received " + records.count() + " records.");
+                    ConsumerRecords<String, String> records = this.consumer.poll(Duration.ofMillis(500));
+                    LOG.debug("Received " + records.count() + " records.");
+                    if (records.isEmpty()) {
+                        continue;
+                    }
                     BulkRequest bulkRequest = new BulkRequest();
                     for (ConsumerRecord<String, String> record : records) {
-                        LOG.debug("Key: " + record.key() + ", Value: " + record.value() +
-                                ", Partition: " + record.partition() + ", Offset: " + record.offset());
+                        // LOG.debug("Key: " + record.key() + ", Value: " + record.value() +
+                        //        ", Partition: " + record.partition() + ", Offset: " + record.offset());
                         IndexRequest indexRequest = toIndexRequest(record);
                         bulkRequest.add(indexRequest);
                         // this.index.commit(indexRequest);
                     }
-                    this.index.commitBulk(bulkRequest);
-                    this.consumer.commitSync();
+                    try {
+                        this.index.commitBulk(bulkRequest);
+                        this.consumer.commitSync();
+                    } catch (IOException ex) {
+                        LOG.error("Failed indexing to ElasticSearch", ex);
+                    }
                 }
             } catch (WakeupException ex) {
                 LOG.info("Received WakeupException");
