@@ -101,3 +101,9 @@ Consume tweets from `twitter_tweets` topic to stdout with `kafkacat`:
 ```bash
 $ kafkacat -b localhost:9092 -t twitter_tweets
 ```
+
+Check consumer group offsets:
+
+```bash
+$ kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group es-consumer-1 --describe
+```
