@@ -10,4 +10,4 @@
 rootProject.name = 'kafka-twitter-elasticsearch'
 include 'twitter-producer'
 include 'elasticsearch-consumer'
-include 'kafka-streams-filter-tweets'
+include 'stream-tweets'
