@@ -7,16 +7,12 @@
  */
 
 dependencies {
-    // compile project(':greeting-library')
-
     // This dependency is found on compile classpath of this component and consumers.
     implementation 'com.google.guava:guava:26.0-jre'
 
     // https://mvnrepository.com/artifact/com.google.code.gson/gson
     implementation 'com.google.code.gson:gson:2.8.6'
 
-    // implementation 'org.slf4j:slf4j-simple:1.7.30'
-    // implementation 'org.apache.kafka:kafka-clients:2.4.0'
     // https://mvnrepository.com/artifact/org.elasticsearch.client/elasticsearch-rest-high-level-client
     implementation 'org.elasticsearch.client:elasticsearch-rest-high-level-client:7.5.2'
 

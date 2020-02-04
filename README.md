@@ -25,7 +25,7 @@ $ ./stop-zookeeper-kafka.sh
 
 Logs are written to `kafka.log` and `zookeeper.log`.
 
-### Starting Twitter producer
+### Starting Twitter producer ([twitter-producer](./twitter-producer))
 
 1. Add Twitter credentials in `twitter-producer/gradle.properties` by using `twitter-producer/gradle.properties.example` as template.
 1. Start the Twitter producer: `./gradlew twitter-producer:run`
@@ -90,7 +90,7 @@ Add a tweet:
 $ curl -X PUT "localhost:9200/twitter/tweets/1" -H 'Content-Type: application/json' -d '{ "course": "Kafka" }'
 ```
 
-### Starting ElasticSearch consumer
+### Starting ElasticSearch consumer ([elasticsearch-consumer](./elasticsearch-consumer))
 
 ```bash
 $ ./gradlew elasticsearch-consumer:run
@@ -114,3 +114,23 @@ $ kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group es-consumer
 ## Using the Twitter connector
 
 See [kafka-connect-twitter](./kafka-connect-twitter).
+
+## Using the Kafka Stream ([stream-tweets](./stream-tweets))
+
+Create topic `twitter_tweets_important`:
+
+```bash
+$ kafka-topics.sh --bootstrap-server localhost:9092 --create --topic twitter_tweets_important --partitions 3 --replication-factor 1
+```
+
+Start the stream:
+
+```bash
+$ ./gradlew stream-tweets:run
+```
+
+Consume filtered tweets to console:
+
+```bash
+$ kafkacat -b localhost:9092 -t twitter_tweets_important -C
+```
