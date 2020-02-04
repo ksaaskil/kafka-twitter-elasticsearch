@@ -1,12 +1,14 @@
 # Kafka-Twitter-ElasticSearch demo
 
-Example of streaming data from Twitter to ElasticSearch via Kafka from Stephane Maarek's [Learn Apache Kafka for Beginners](https://www.udemy.com/course/apache-kafka/) course.
+Example of streaming data from Twitter to ElasticSearch via Kafka.
 
-Stuff I (@ksaaskil) have added:
+Based on Stephane Maarek's [Learn Apache Kafka for Beginners](https://www.udemy.com/course/apache-kafka/) course.
+
+## Stuff I have added (@ksaaskil)
 
 - `gradle` instead of `mvn`
 - Reading Twitter credentials from `gradle.properties`
-- `slf4j-simplelogger` and a configuration file for it
+- `slf4j-simplelogger` and a configuration file for it in `resources/`
 - Instructions for running ElasticSearch via Docker Compose
 
 ## Instructions
